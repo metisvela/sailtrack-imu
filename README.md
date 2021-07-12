@@ -1,2 +1,2 @@
 # SailTrack IMU
-Repository containing the code of the radio module of the SailTrack system.
+Repository containing the code of the IMU module of the SailTrack system.
