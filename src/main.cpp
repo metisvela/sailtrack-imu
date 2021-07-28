@@ -21,7 +21,7 @@ void setup()
 	// Enable serial communication
 	Serial.begin(115200);
 
-	STModule.init("imu", IPAddress(192,168,42,102));
+	STModule.begin("imu", "sailtrack-imu", IPAddress(192,168,42,102));
 
 	Wire.begin(I2C_SDA, I2C_SCL);
 	bno = Adafruit_BNO055(55, 0x29, &Wire);
@@ -48,7 +48,7 @@ void loop()
 	uint8_t system, gyro, accel, mag = 0;
 	bno.getCalibration(&system, &gyro, &accel, &mag);
 
-	DynamicJsonDocument doc(2000);
+	DynamicJsonDocument doc(300);
 
 	JsonArray Orient = doc.createNestedArray("Orient");
 	Orient.add(orientationData.orientation.x);
