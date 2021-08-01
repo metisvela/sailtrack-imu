@@ -48,7 +48,6 @@ void setup() {
 }
 
 void loop() {
-	STModule.loop();
 	sensors_event_t eulerData, gyroData, linearAccelData, magnetometerData, accelerometerData, gravityData;
 	IMU.getEvent(&eulerData, Adafruit_BNO055::VECTOR_EULER);
 	IMU.getEvent(&gyroData, Adafruit_BNO055::VECTOR_GYROSCOPE);
