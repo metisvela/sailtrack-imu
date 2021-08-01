@@ -48,6 +48,7 @@ void setup() {
 }
 
 void loop() {
+	STModule.loop();
 	sensors_event_t eulerData, gyroData, linearAccelData, magnetometerData, accelerometerData, gravityData;
 	IMU.getEvent(&eulerData, Adafruit_BNO055::VECTOR_EULER);
 	IMU.getEvent(&gyroData, Adafruit_BNO055::VECTOR_GYROSCOPE);
@@ -56,7 +57,7 @@ void loop() {
 	IMU.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
 	IMU.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
 
-	DynamicJsonDocument payload(300);
+	DynamicJsonDocument payload(500);
 
 	JsonObject euler = payload.createNestedObject("euler");
 	euler["x"] = eulerData.orientation.x;
@@ -82,8 +83,6 @@ void loop() {
 	accelerometer["x"] = accelerometerData.acceleration.x;
 	accelerometer["y"] = accelerometerData.acceleration.y;
 	accelerometer["z"] = accelerometerData.acceleration.z;
-	
-	payload["temperature"] = IMU.getTemp();
 
 	uint8_t calSystem, calGyro, calAccel, calMag = 0;
 	IMU.getCalibration(&calSystem, &calGyro, &calAccel, &calMag);
@@ -92,6 +91,8 @@ void loop() {
 	calibration["gyro"] = calGyro;
 	calibration["accel"] = calAccel;
 	calibration["mag"] = calMag;
+
+	payload["temperature"] = IMU.getTemp();
 
 	STModule.publish("sensor/imu0", "imu0", payload);
 
