@@ -16,6 +16,7 @@
 #define PUBLISH_PERIOD_MS 1000 / PUBLISH_RATE
 
 Adafruit_BNO055 IMU;
+SailtrackModule STM;
 
 class ModuleCallbacks: public SailtrackModuleCallbacks {
 	void onWifiConnectionBegin() {
@@ -43,8 +44,8 @@ void beginIMU() {
 }
 
 void setup() {
-	STModule.begin("imu", "sailtrack-imu", IPAddress(192,168,42,102));
-	STModule.setCallbacks(new ModuleCallbacks());
+	STM.setCallbacks(new ModuleCallbacks());
+	STM.configWifi("Infostrada-511044", "dUTnFXayNV", IPAddress(192,168,1,1), WIFI_DEFAULT_SUBNET);
 	beginIMU();
 }
 
@@ -94,7 +95,7 @@ void loop() {
 
 	payload["temperature"] = IMU.getTemp();
 
-	STModule.publish("sensor/imu0", "imu0", payload);
+	STM.publish("sensor/imu0", payload);
 
 	delay(PUBLISH_PERIOD_MS);
 }
