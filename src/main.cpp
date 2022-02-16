@@ -45,7 +45,7 @@ void beginIMU() {
 
 void setup() {
 	STM.setCallbacks(new ModuleCallbacks());
-	STM.configWifi("Infostrada-511044", "dUTnFXayNV", IPAddress(192,168,1,1), WIFI_DEFAULT_SUBNET);
+	STM.begin("imu", IPAddress(192, 168, 42, 102));
 	beginIMU();
 }
 
