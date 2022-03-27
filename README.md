@@ -1,2 +1,2 @@
 # SailTrack IMU
-Repository containing the code of the IMU module of the SailTrack system.
+Module of the SailTrack system for getting combined orientation and acceleration data of the boat.
