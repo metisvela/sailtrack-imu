@@ -32,10 +32,10 @@ class ModuleCallbacks: public SailtrackModuleCallbacks {
 		// TODO: Notify user
 	}
 
-	DynamicJsonDocument getStatus() {
-		DynamicJsonDocument payload(300);
-		JsonObject battery = payload.createNestedObject("battery");
-		JsonObject cpu = payload.createNestedObject("cpu");
+	DynamicJsonDocument * getStatus() {
+		DynamicJsonDocument * payload = new DynamicJsonDocument(300);
+		JsonObject battery = payload->createNestedObject("battery");
+		JsonObject cpu = payload->createNestedObject("cpu");
 		battery["voltage"] = analogRead(BATTERY_ADC_PIN) * BATTERY_ADC_MULTIPLIER / 1000;
 		cpu["temperature"] = temperatureRead();
 		return payload;
@@ -50,7 +50,7 @@ void beginIMU() {
 
 void setup() {
 	pinMode(LED_BUILTIN, OUTPUT);
-	STM.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks(), LED_BUILTIN);
+	STM.setNotificationLed(LED_BUILTIN);
 	beginIMU();
   //Kalman Filter INIT
   IMU_KF.begin(PUBLISH_RATE);
@@ -158,7 +158,7 @@ void loop() {
 
 	payload["temperature"] = IMU.getTemp();
 
-	STM.publish("sensor/imu0", payload);
+	STM.publish("sensor/imu0", &payload);
 
 	delay(PUBLISH_PERIOD_MS);
 }
