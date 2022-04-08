@@ -1,12 +1,10 @@
-
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <SPI.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BNO055.h>
-#include <SailtrackModule.h>
-
 #include <Adafruit_AHRS_NXPFusion.h>
+#include <SailtrackModule.h>
 
 #define BATTERY_ADC_PIN 35
 #define BATTERY_ADC_MULTIPLIER 1.7
@@ -15,23 +13,17 @@
 #define I2C_SDA 27
 #define I2C_SCL 25
 
-#define PUBLISH_RATE 500
-#define PUBLISH_PERIOD_MS 1000 / PUBLISH_RATE
+#define AHRS_SAMPLE_RATE 50
+#define AHRS_UPDATE_RATE 50
+
+#define PUBLISH_RATE 5
 #define G_CONSTANT 9.8
 
 Adafruit_BNO055 IMU;
 SailtrackModule STM;
-Adafruit_NXPSensorFusion IMU_KF;
+Adafruit_NXPSensorFusion AHRS;
 
 class ModuleCallbacks: public SailtrackModuleCallbacks {
-	void onWifiConnectionBegin() {
-		// TODO: Notify user
-	}
-	
-	void onWifiConnectionResult(wl_status_t status) {
-		// TODO: Notify user
-	}
-
 	DynamicJsonDocument * getStatus() {
 		DynamicJsonDocument * payload = new DynamicJsonDocument(300);
 		JsonObject battery = payload->createNestedObject("battery");
@@ -42,6 +34,34 @@ class ModuleCallbacks: public SailtrackModuleCallbacks {
 	}
 };
 
+void ahrsTask(void * pvArguments) {
+	while(true) {
+		
+		sensors_event_t eulerData, gyroData, linearAccelData, magnetometerData, accelerometerData, gravityData;
+		
+		IMU.getEvent(&eulerData, Adafruit_BNO055::VECTOR_EULER);
+		IMU.getEvent(&gyroData, Adafruit_BNO055::VECTOR_GYROSCOPE);
+		IMU.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
+		IMU.getEvent(&magnetometerData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
+		IMU.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
+		IMU.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
+
+		float gyroX = gyroData.gyro.x * RAD_TO_DEG;
+		float gyroY = gyroData.gyro.y * RAD_TO_DEG;
+		float gyroZ = gyroData.gyro.z * RAD_TO_DEG;
+		float accelX = accelerometerData.acceleration.x / G_CONSTANT;
+		float accelY = accelerometerData.acceleration.y / G_CONSTANT;
+		float accelZ = accelerometerData.acceleration.z / G_CONSTANT;
+		float magX = magnetometerData.magnetic.x;
+		float magY = magnetometerData.magnetic.y;
+		float magZ = magnetometerData.magnetic.z;
+
+		AHRS.update(gyroX, gyroY, gyroZ, accelX, accelY, accelZ, magX, magY, magZ);
+
+		delay(1000 / AHRS_UPDATE_RATE);
+	}
+}
+
 void beginIMU() {
 	Wire.begin(I2C_SDA, I2C_SCL);
 	IMU = Adafruit_BNO055(55, 0x29, &Wire);
@@ -49,118 +69,36 @@ void beginIMU() {
 }
 
 void setup() {
-	pinMode(LED_BUILTIN, OUTPUT);
 	STM.setNotificationLed(LED_BUILTIN);
+	STM.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks());
 	beginIMU();
-  //Kalman Filter INIT
-  IMU_KF.begin(PUBLISH_RATE);
+	AHRS.begin(AHRS_SAMPLE_RATE);
+	xTaskCreate(ahrsTask, "ahrsTask", TASK_MEDIUM_STACK_SIZE, NULL, TASK_MEDIUM_PRIORITY, NULL);
 }
 
 void loop() {
+	float linearAccelX, linearAccelY, linearAccelZ;
+  	AHRS.getLinearAcceleration(&linearAccelX, &linearAccelY, &linearAccelZ);
+	//convert accelerations in m/s2
+	linearAccelX = linearAccelX*G_CONSTANT;
+	linearAccelY = linearAccelY*G_CONSTANT;
+	linearAccelZ = linearAccelZ*G_CONSTANT;
 
-	sensors_event_t eulerData, gyroData, linearAccelData, magnetometerData, accelerometerData, gravityData;
-	IMU.getEvent(&eulerData, Adafruit_BNO055::VECTOR_EULER);
-	IMU.getEvent(&gyroData, Adafruit_BNO055::VECTOR_GYROSCOPE);
-	IMU.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
-	IMU.getEvent(&magnetometerData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
-	IMU.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
-	IMU.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
-
-  //sensor fusion on IMU with Kalman Filter from Adafruit AHRS
-  
-  //geting raw data components
-  float gyro_x = gyroData.gyro.x;
-  float gyro_y = gyroData.gyro.y;
-  float gyro_z = gyroData.gyro.z;
-  float ax = accelerometerData.acceleration.x/G_CONSTANT;
-  float ay = accelerometerData.acceleration.y/G_CONSTANT;
-  float az = accelerometerData.acceleration.z/G_CONSTANT;
-  float mx = magnetometerData.magnetic.x;
-  float my = magnetometerData.magnetic.y;
-  float mz = magnetometerData.magnetic.z;
-
-  //kalman filter update
-  IMU_KF.update(gyro_x, gyro_y, gyro_z, ax, ay, az, mx, my, mz);
-  
-  //extracting measurments from filter
-  float filt_accx, filt_accy, filt_accz;
-  float filt_gx, filt_gy, filt_gz;
-  float filt_roll, filt_pitch, filt_yaw;
-  float w, x, y, z;
-  IMU_KF.getQuaternion(&w, &x, &y, &z);
-  IMU_KF.getLinearAcceleration(&filt_accx, &filt_accy, &filt_accz);
-  IMU_KF.getGravityVector(&filt_gx, &filt_gy, &filt_gz);
-  filt_roll = IMU_KF.getRoll();
-  filt_pitch = IMU_KF.getPitch();
-  filt_yaw = IMU_KF.getYaw();
-  
-  //subracting gravity acceleration vector
-/*filt_accx = filt_accx-filt_gx;
-  filt_accy = filt_accy-filt_gy;
-  filt_accz = filt_accz-filt_gz;
-*/
 	DynamicJsonDocument payload(500);
-  JsonObject euler = payload.createNestedObject("euler");
-	euler["x"] = filt_roll;
-	euler["y"] = filt_pitch;
-	euler["z"] = filt_yaw;
-/*
-	JsonObject euler = payload.createNestedObject("euler");
-	euler["x"] = eulerData.orientation.x;
-	euler["y"] = eulerData.orientation.y;
-	euler["z"] = eulerData.orientation.z;
-*/
-	JsonObject gyro = payload.createNestedObject("gyro");
-	gyro["x"] = gyroData.gyro.x;
-	gyro["y"] = gyroData.gyro.y;
-	gyro["z"] = gyroData.gyro.z;
-/*
+  	JsonObject euler = payload.createNestedObject("euler");
+	euler["roll"] = AHRS.getRoll();
+	euler["pitch"] = AHRS.getPitch();
+	euler["yaw"] = AHRS.getYaw();
+
 	JsonObject linearAccel = payload.createNestedObject("linear_accel");
-	linearAccel["x"] = linearAccelData.acceleration.x;
-	linearAccel["y"] = linearAccelData.acceleration.y;
-	linearAccel["z"] = linearAccelData.acceleration.z;
-*/
-	JsonObject linearAccel = payload.createNestedObject("linear_accel");
-	linearAccel["x"] = filt_accx;
-	linearAccel["y"] = filt_accy;
-	linearAccel["z"] = filt_accz;
-
-  JsonObject gravity = payload.createNestedObject("gravity");
-	gravity["x"] = filt_gx;
-	gravity["y"] = filt_gy;
-	gravity["z"] = filt_gz;
-
- 	JsonObject quaternion = payload.createNestedObject("quaternion");
-	quaternion["w"] = w;
-  quaternion["x"] = x;
-	quaternion["y"] = y;
-	quaternion["z"] = z; 
-/*
-	JsonObject magnetometer = payload.createNestedObject("magnetometer");
-	magnetometer["x"] = magnetometerData.magnetic.x;
-	magnetometer["y"] = magnetometerData.magnetic.y;
-	magnetometer["z"] = magnetometerData.magnetic.z;
-*/
-
-	JsonObject accelerometer = payload.createNestedObject("accelerometer");
-	accelerometer["x"] = accelerometerData.acceleration.x;
-	accelerometer["y"] = accelerometerData.acceleration.y;
-	accelerometer["z"] = accelerometerData.acceleration.z;
-
-	uint8_t calSystem, calGyro, calAccel, calMag = 0;
-	IMU.getCalibration(&calSystem, &calGyro, &calAccel, &calMag);
-	JsonObject calibration = payload.createNestedObject("calibration");
-	//fare uno store dei dati di calibrazione buoni per evitare future calibrazioni.
-	calibration["system"] = calSystem;
-	calibration["gyro"] = calGyro;
-	calibration["accel"] = calAccel;
-	calibration["mag"] = calMag;
+	linearAccel["x"] = linearAccelX;
+	linearAccel["y"] = linearAccelY;
+	linearAccel["z"] = linearAccelZ;
 
 	payload["temperature"] = IMU.getTemp();
 
 	STM.publish("sensor/imu0", &payload);
+	Serial.println("ho pubblicato un cazzo di messaggio");
 
-	delay(PUBLISH_PERIOD_MS);
+	delay(1000 / PUBLISH_RATE);
 }
-
-
