@@ -64,15 +64,15 @@ void ahrsTask(void * pvArguments) {
 
 void beginIMU() {
 	Wire.begin(I2C_SDA, I2C_SCL);
-	IMU = Adafruit_BNO055(55, 0x29, &Wire);
+	IMU = Adafruit_BNO055(-1, 0x28, &Wire); //Original BNO: 55, 0x29
 	IMU.begin();
+	AHRS.begin(AHRS_SAMPLE_RATE);
 }
 
 void setup() {
 	STM.setNotificationLed(LED_BUILTIN);
 	STM.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks());
 	beginIMU();
-	AHRS.begin(AHRS_SAMPLE_RATE);
 	xTaskCreate(ahrsTask, "ahrsTask", TASK_MEDIUM_STACK_SIZE, NULL, TASK_MEDIUM_PRIORITY, NULL);
 }
 
@@ -98,7 +98,6 @@ void loop() {
 	payload["temperature"] = IMU.getTemp();
 
 	STM.publish("sensor/imu0", &payload);
-	Serial.println("ho pubblicato un cazzo di messaggio");
 
 	delay(1000 / PUBLISH_RATE);
 }
