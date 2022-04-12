@@ -1,27 +1,24 @@
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include <SPI.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BNO055.h>
-#include <Adafruit_AHRS_NXPFusion.h>
 #include <SailtrackModule.h>
+#include <Adafruit_BNO055.h>
+#include <Adafruit_AHRS.h>
+#include <Adafruit_Sensor_Calibration.h>
 
 #define BATTERY_ADC_PIN 35
 #define BATTERY_ADC_MULTIPLIER 1.7
 #define CONNECTION_LED_PIN 5
 
-#define I2C_SDA 27
-#define I2C_SCL 25
+#define I2C_SDA_PIN 25
+#define I2C_SCL_PIN 27
 
-#define AHRS_SAMPLE_RATE 50
-#define AHRS_UPDATE_RATE 50
+#define FILTER_UPDATE_RATE_HZ 100
+#define MQTT_PUBLISH_RATE_HZ 2
 
-#define PUBLISH_RATE 5
-#define G_CONSTANT 9.8
-
-Adafruit_BNO055 IMU;
-SailtrackModule STM;
-Adafruit_NXPSensorFusion AHRS;
+SailtrackModule stm;
+Adafruit_BNO055 bno;
+Adafruit_NXPSensorFusion filter;
+Adafruit_Sensor_Calibration_EEPROM cal;
 
 class ModuleCallbacks: public SailtrackModuleCallbacks {
 	DynamicJsonDocument * getStatus() {
@@ -34,70 +31,69 @@ class ModuleCallbacks: public SailtrackModuleCallbacks {
 	}
 };
 
-void ahrsTask(void * pvArguments) {
+void publishTask(void * pvArguments) {
 	while(true) {
-		
-		sensors_event_t eulerData, gyroData, linearAccelData, magnetometerData, accelerometerData, gravityData;
-		
-		IMU.getEvent(&eulerData, Adafruit_BNO055::VECTOR_EULER);
-		IMU.getEvent(&gyroData, Adafruit_BNO055::VECTOR_GYROSCOPE);
-		IMU.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
-		IMU.getEvent(&magnetometerData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
-		IMU.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
-		IMU.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
+		DynamicJsonDocument payload(500);
 
-		float gyroX = gyroData.gyro.x * RAD_TO_DEG;
-		float gyroY = gyroData.gyro.y * RAD_TO_DEG;
-		float gyroZ = gyroData.gyro.z * RAD_TO_DEG;
-		float accelX = accelerometerData.acceleration.x / G_CONSTANT;
-		float accelY = accelerometerData.acceleration.y / G_CONSTANT;
-		float accelZ = accelerometerData.acceleration.z / G_CONSTANT;
-		float magX = magnetometerData.magnetic.x;
-		float magY = magnetometerData.magnetic.y;
-		float magZ = magnetometerData.magnetic.z;
+		JsonObject orientation = payload.createNestedObject("orientation");
+		orientation["heading"] = filter.getYaw();
+		orientation["pitch"] = filter.getPitch();
+		orientation["roll"] = filter.getRoll();
 
-		AHRS.update(gyroX, gyroY, gyroZ, accelX, accelY, accelZ, magX, magY, magZ);
+		payload["temperature"] = bno.getTemp();
 
-		delay(1000 / AHRS_UPDATE_RATE);
+		stm.publish("sensor/imu0", &payload);
+
+		delay(1000 / MQTT_PUBLISH_RATE_HZ);
 	}
 }
 
 void beginIMU() {
-	Wire.begin(I2C_SDA, I2C_SCL);
-	IMU = Adafruit_BNO055(-1, 0x28, &Wire); //Original BNO: 55, 0x29
-	IMU.begin();
-	AHRS.begin(AHRS_SAMPLE_RATE);
+	Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
+	bno.begin(Adafruit_BNO055::OPERATION_MODE_AMG);
+	bno.setExtCrystalUse(true);
+	Wire.setClock(400000);
+}
+
+void beginAHRS() {
+	cal.begin();
+	cal.loadCalibration();
+	filter.begin();
 }
 
 void setup() {
-	STM.setNotificationLed(LED_BUILTIN);
-	STM.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks());
+	stm.setNotificationLed(LED_BUILTIN);
+	stm.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks());
 	beginIMU();
-	xTaskCreate(ahrsTask, "ahrsTask", TASK_MEDIUM_STACK_SIZE, NULL, TASK_MEDIUM_PRIORITY, NULL);
+	beginAHRS();
+	xTaskCreate(publishTask, "publishTask", TASK_MEDIUM_STACK_SIZE, NULL, TASK_MEDIUM_PRIORITY, NULL);
 }
 
 void loop() {
-	float linearAccelX, linearAccelY, linearAccelZ;
-  	AHRS.getLinearAcceleration(&linearAccelX, &linearAccelY, &linearAccelZ);
-	//convert accelerations in m/s2
-	linearAccelX = linearAccelX*G_CONSTANT;
-	linearAccelY = linearAccelY*G_CONSTANT;
-	linearAccelZ = linearAccelZ*G_CONSTANT;
+	sensors_event_t accelEvent, gyroEvent, magEvent;
 
-	DynamicJsonDocument payload(500);
-  	JsonObject euler = payload.createNestedObject("euler");
-	euler["roll"] = AHRS.getRoll();
-	euler["pitch"] = AHRS.getPitch();
-	euler["yaw"] = AHRS.getYaw();
+	bno.getEvent(&accelEvent, Adafruit_BNO055::VECTOR_ACCELEROMETER);
+	bno.getEvent(&gyroEvent, Adafruit_BNO055::VECTOR_GYROSCOPE);
+	bno.getEvent(&magEvent, Adafruit_BNO055::VECTOR_MAGNETOMETER);
 
-	JsonObject linearAccel = payload.createNestedObject("linear_accel");
-	linearAccel["x"] = linearAccelX;
-	linearAccel["y"] = linearAccelY;
-	linearAccel["z"] = linearAccelZ;
+	cal.calibrate(accelEvent);
+	cal.calibrate(gyroEvent);
+	cal.calibrate(magEvent);
 
-	payload["temperature"] = IMU.getTemp();
+	float gx, gy, gz;
+	gx = gyroEvent.gyro.x * SENSORS_RADS_TO_DPS;
+	gy = gyroEvent.gyro.y * SENSORS_RADS_TO_DPS;
+	gz = gyroEvent.gyro.z * SENSORS_RADS_TO_DPS;
 
-	STM.publish("sensor/imu0", &payload);
+	float ax, ay, az;
+	ax = accelEvent.acceleration.x / SENSORS_GRAVITY_STANDARD;
+	ay = accelEvent.acceleration.y / SENSORS_GRAVITY_STANDARD;
+	az = accelEvent.acceleration.z / SENSORS_GRAVITY_STANDARD;
 
-	delay(1000 / PUBLISH_RATE);
+	filter.update(gx, gy, gz,
+				  ax, ay, az,
+				  magEvent.magnetic.x, magEvent.magnetic.y, magEvent.magnetic.z
+	);
+
+	delay(1000 / FILTER_UPDATE_RATE_HZ);
 }
