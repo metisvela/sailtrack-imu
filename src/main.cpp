@@ -90,10 +90,7 @@ void loop() {
 	ay = accelEvent.acceleration.y / SENSORS_GRAVITY_STANDARD;
 	az = accelEvent.acceleration.z / SENSORS_GRAVITY_STANDARD;
 
-	filter.update(gx, gy, gz,
-				  ax, ay, az,
-				  magEvent.magnetic.x, magEvent.magnetic.y, magEvent.magnetic.z
-	);
+	filter.update(gx, gy, gz, ax, ay, az, magEvent.magnetic.x, magEvent.magnetic.y, magEvent.magnetic.z);
 
 	delay(1000 / FILTER_UPDATE_RATE_HZ);
 }
