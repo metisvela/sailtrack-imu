@@ -32,7 +32,7 @@ class ModuleCallbacks: public SailtrackModuleCallbacks {
 };
 
 void publishTask(void * pvArguments) {
-	while(true) {
+	while (true) {
 		DynamicJsonDocument payload(500);
 
 		JsonObject orientation = payload.createNestedObject("orientation");
