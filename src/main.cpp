@@ -35,9 +35,14 @@ void publishTask(void * pvArguments) {
 	while (true) {
 		DynamicJsonDocument payload(500);
 
+		JsonObject euler = payload.createNestedObject("euler");
+		euler["x"] = filter.getRoll();
+		euler["y"] = filter.getPitch();
+		euler["z"] = filter.getYaw();
+
 		JsonObject orientation = payload.createNestedObject("orientation");
-		orientation["heading"] = filter.getYaw();
-		orientation["pitch"] = filter.getPitch();
+		orientation["heading"] = 360 - filter.getYaw();
+		orientation["pitch"] = - filter.getPitch();
 		orientation["roll"] = filter.getRoll();
 
 		payload["temperature"] = bno.getTemp();
