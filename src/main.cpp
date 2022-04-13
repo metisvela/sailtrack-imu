@@ -7,7 +7,6 @@
 
 #define BATTERY_ADC_PIN 35
 #define BATTERY_ADC_MULTIPLIER 1.7
-#define CONNECTION_LED_PIN 5
 
 #define I2C_SDA_PIN 25
 #define I2C_SCL_PIN 27
