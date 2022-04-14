@@ -12,12 +12,16 @@
 #define I2C_SCL_PIN 27
 
 #define FILTER_UPDATE_RATE_HZ 100
-#define MQTT_PUBLISH_RATE_HZ 2
+#define MQTT_PUBLISH_RATE_HZ 10
 
 SailtrackModule stm;
 Adafruit_BNO055 bno;
 Adafruit_NXPSensorFusion filter;
 Adafruit_Sensor_Calibration_EEPROM cal;
+
+float eulerX, eulerY, eulerZ;
+float linearAccelX, linearAccelY, linearAccelZ;
+int8_t temp;
 
 class ModuleCallbacks: public SailtrackModuleCallbacks {
 	DynamicJsonDocument * getStatus() {
@@ -35,16 +39,21 @@ void publishTask(void * pvArguments) {
 		DynamicJsonDocument payload(500);
 
 		JsonObject euler = payload.createNestedObject("euler");
-		euler["x"] = filter.getRoll();
-		euler["y"] = filter.getPitch();
-		euler["z"] = filter.getYaw();
+		euler["x"] = eulerX;
+		euler["y"] = eulerY;
+		euler["z"] = eulerZ;
 
 		JsonObject orientation = payload.createNestedObject("orientation");
-		orientation["heading"] = 360 - filter.getYaw();
-		orientation["pitch"] = - filter.getPitch();
-		orientation["roll"] = filter.getRoll();
+		orientation["heading"] = 360 - eulerZ;
+		orientation["pitch"] = - eulerY;
+		orientation["roll"] = eulerX;
 
-		payload["temperature"] = bno.getTemp();
+		JsonObject linearAccel = payload.createNestedObject("linearAccel");
+		linearAccel["x"] = linearAccelX;
+		linearAccel["y"] = linearAccelY;
+		linearAccel["z"] = linearAccelZ;
+
+		payload["temperature"] = temp;
 
 		stm.publish("sensor/imu0", &payload);
 
@@ -79,6 +88,7 @@ void loop() {
 	bno.getEvent(&accelEvent, Adafruit_BNO055::VECTOR_ACCELEROMETER);
 	bno.getEvent(&gyroEvent, Adafruit_BNO055::VECTOR_GYROSCOPE);
 	bno.getEvent(&magEvent, Adafruit_BNO055::VECTOR_MAGNETOMETER);
+	temp = bno.getTemp();
 
 	cal.calibrate(accelEvent);
 	cal.calibrate(gyroEvent);
@@ -95,6 +105,12 @@ void loop() {
 	az = accelEvent.acceleration.z / SENSORS_GRAVITY_STANDARD;
 
 	filter.update(gx, gy, gz, ax, ay, az, magEvent.magnetic.x, magEvent.magnetic.y, magEvent.magnetic.z);
+
+	eulerX = filter.getRoll();
+	eulerY = filter.getPitch();
+	eulerZ = filter.getYaw();
+
+	filter.getLinearAcceleration(&linearAccelX, &linearAccelY, &linearAccelZ); 
 
 	delay(1000 / FILTER_UPDATE_RATE_HZ);
 }
