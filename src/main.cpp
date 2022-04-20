@@ -6,7 +6,10 @@
 #include <Adafruit_Sensor_Calibration.h>
 
 #define BATTERY_ADC_PIN 35
-#define BATTERY_ADC_MULTIPLIER 1.7
+#define BATTERY_ADC_RESOLUTION 4095
+#define BATTERY_ADC_REF_VOLTAGE 1.1
+#define BATTERY_ESP32_REF_VOLTAGE 3.3
+#define BATTERY_NUM_READINGS 32
 
 #define I2C_SDA_PIN 25
 #define I2C_SCL_PIN 27
@@ -28,13 +31,19 @@ class ModuleCallbacks: public SailtrackModuleCallbacks {
 		DynamicJsonDocument * payload = new DynamicJsonDocument(300);
 		JsonObject battery = payload->createNestedObject("battery");
 		JsonObject cpu = payload->createNestedObject("cpu");
-		battery["voltage"] = analogRead(BATTERY_ADC_PIN) * BATTERY_ADC_MULTIPLIER / 1000;
+		float avg = 0;
+		for (int i = 0; i < BATTERY_NUM_READINGS; i++) {
+			avg += analogRead(BATTERY_ADC_PIN) / BATTERY_NUM_READINGS;
+			delay(20);
+		}
+		battery["voltage"] = 2 * avg / BATTERY_ADC_RESOLUTION * BATTERY_ESP32_REF_VOLTAGE * BATTERY_ADC_REF_VOLTAGE;
 		cpu["temperature"] = temperatureRead();
 		return payload;
 	}
 };
 
 void publishTask(void * pvArguments) {
+	TickType_t lastWakeTime = xTaskGetTickCount();
 	while (true) {
 		DynamicJsonDocument payload(500);
 
@@ -57,8 +66,13 @@ void publishTask(void * pvArguments) {
 
 		stm.publish("sensor/imu0", &payload);
 
-		delay(1000 / MQTT_PUBLISH_RATE_HZ);
+		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(1000 / MQTT_DATA_PUBLISH_RATE_HZ));
 	}
+}
+
+void beginModule() {
+	stm.setNotificationLed(LED_BUILTIN);
+	stm.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks());
 }
 
 void beginIMU() {
@@ -75,13 +89,13 @@ void beginAHRS() {
 }
 
 void setup() {
-	stm.setNotificationLed(LED_BUILTIN);
-	stm.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks());
+	beginModule();
 	beginIMU();
 	beginAHRS();
 	xTaskCreate(publishTask, "publishTask", TASK_MEDIUM_STACK_SIZE, NULL, TASK_MEDIUM_PRIORITY, NULL);
 }
 
+TickType_t lastWakeTime = xTaskGetTickCount();
 void loop() {
 	sensors_event_t accelEvent, gyroEvent, magEvent;
 
@@ -112,5 +126,5 @@ void loop() {
 
 	filter.getLinearAcceleration(&linearAccelX, &linearAccelY, &linearAccelZ); 
 
-	delay(1000 / FILTER_UPDATE_RATE_HZ);
+	vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(1000 / FILTER_UPDATE_RATE_HZ));
 }
