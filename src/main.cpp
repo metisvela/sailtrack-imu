@@ -15,7 +15,7 @@
 #define I2C_SCL_PIN 27
 
 #define FILTER_UPDATE_RATE_HZ 100
-#define MQTT_PUBLISH_RATE_HZ 10
+#define MQTT_DATA_PUBLISH_RATE_HZ 10
 
 SailtrackModule stm;
 Adafruit_BNO055 bno;
