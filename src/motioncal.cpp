@@ -3,8 +3,12 @@
 #include <Adafruit_BNO055.h>
 #include <Adafruit_Sensor_Calibration.h>
 
-#define I2C_SDA_PIN 25
-#define I2C_SCL_PIN 27
+// -------------------------- Configuration -------------------------- //
+
+#define I2C_SDA_PIN                 25
+#define I2C_SCL_PIN                 27
+
+// ------------------------------------------------------------------- //
 
 Adafruit_BNO055 bno;
 Adafruit_Sensor_Calibration_EEPROM cal;
@@ -13,16 +17,6 @@ int loopcount = 0;
 
 byte calData[68];
 byte calCount = 0;
-
-void ledTask(void * pvArguments) {
-    for (int i = 0; i < 3; i++) {
-        digitalWrite(LED_BUILTIN, HIGH);
-        delay(100);
-        digitalWrite(LED_BUILTIN, LOW);
-        delay(100);
-    }
-    vTaskDelete(NULL);
-}
 
 uint16_t crc16Update(uint16_t crc, uint8_t a) {
     int i;
@@ -81,8 +75,6 @@ void receiveCalibration() {
 
             cal.saveCalibration();
 
-            xTaskCreate(ledTask, "ledTask", 4096, NULL, 1, NULL);
-
             calCount = 0;
             return;
         }
@@ -110,7 +102,6 @@ void setup(void) {
     bno.begin(Adafruit_BNO055::OPERATION_MODE_AMG);
     bno.setExtCrystalUse(true);
     Wire.setClock(400000);
-    pinMode(LED_BUILTIN, OUTPUT);
 }
 
 void loop() {
