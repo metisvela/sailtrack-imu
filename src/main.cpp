@@ -1,7 +1,8 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SailtrackModule.h>
-#include <Adafruit_BNO055.h>
+#include <Adafruit_FXOS8700.h>
+#include <Adafruit_FXAS21002C.h>
 #include <Adafruit_AHRS.h>
 #include <Adafruit_Sensor_Calibration.h>
 
@@ -17,8 +18,8 @@
 #define BATTERY_NUM_READINGS 		32
 #define BATTERY_READING_DELAY_MS	20
 
-#define I2C_SDA_PIN 				25
-#define I2C_SCL_PIN 				27
+#define I2C_SDA_PIN 				27
+#define I2C_SCL_PIN 				25
 
 #define LOOP_TASK_DELAY_MS			1000 / AHRS_UPDATE_FREQ_HZ
 #define MQTT_TASK_DELAY_MS		 	1000 / MQTT_PUBLISH_FREQ_HZ
@@ -26,13 +27,14 @@
 // ------------------------------------------------------------------- //
 
 SailtrackModule stm;
-Adafruit_BNO055 bno;
+Adafruit_FXOS8700 fxos = Adafruit_FXOS8700(0x8700A, 0x8700B);
+Adafruit_FXAS21002C fxas = Adafruit_FXAS21002C(0x0021002C);
 Adafruit_NXPSensorFusion filter;
 Adafruit_Sensor_Calibration_EEPROM cal;
+Adafruit_Sensor *accelerometer, *gyroscope, *magnetometer;
 
 float eulerX, eulerY, eulerZ;
 float linearAccelX, linearAccelY, linearAccelZ;
-int8_t temperature;
 
 class ModuleCallbacks: public SailtrackModuleCallbacks {
 	void onStatusPublish(JsonObject status) {
@@ -66,8 +68,6 @@ void mqttTask(void * pvArguments) {
 		linearAccel["y"] = linearAccelY;
 		linearAccel["z"] = linearAccelZ;
 
-		doc["temperature"] = temperature;
-
 		stm.publish("sensor/imu0", doc.as<JsonObjectConst>());
 
 		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(MQTT_TASK_DELAY_MS));
@@ -76,8 +76,11 @@ void mqttTask(void * pvArguments) {
 
 void beginIMU() {
 	Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
-	bno.begin(Adafruit_BNO055::OPERATION_MODE_AMG);
-	bno.setExtCrystalUse(true);
+	fxos.begin();
+	fxas.begin();
+	accelerometer = fxos.getAccelerometerSensor();
+	gyroscope = &fxas;
+  	magnetometer = fxos.getMagnetometerSensor();
 	Wire.setClock(400000);
 }
 
@@ -98,10 +101,9 @@ void loop() {
 	TickType_t lastWakeTime = xTaskGetTickCount();
 	sensors_event_t accelEvent, gyroEvent, magEvent;
 
-	bno.getEvent(&accelEvent, Adafruit_BNO055::VECTOR_ACCELEROMETER);
-	bno.getEvent(&gyroEvent, Adafruit_BNO055::VECTOR_GYROSCOPE);
-	bno.getEvent(&magEvent, Adafruit_BNO055::VECTOR_MAGNETOMETER);
-	temperature = bno.getTemp();
+	accelerometer->getEvent(&accelEvent);
+	gyroscope->getEvent(&gyroEvent);
+	magnetometer->getEvent(&magEvent);
 
 	cal.calibrate(accelEvent);
 	cal.calibrate(gyroEvent);
