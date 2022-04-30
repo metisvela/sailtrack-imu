@@ -21,8 +21,8 @@
 #define I2C_SDA_PIN 				27
 #define I2C_SCL_PIN 				25
 
-#define LOOP_TASK_DELAY_MS			1000 / AHRS_UPDATE_FREQ_HZ
-#define MQTT_TASK_DELAY_MS		 	1000 / MQTT_PUBLISH_FREQ_HZ
+#define LOOP_TASK_INTERVAL_MS		1000 / AHRS_UPDATE_FREQ_HZ
+#define MQTT_TASK_INTERVAL_MS	 	1000 / MQTT_PUBLISH_FREQ_HZ
 
 // ------------------------------------------------------------------- //
 
@@ -70,7 +70,7 @@ void mqttTask(void * pvArguments) {
 
 		stm.publish("sensor/imu0", doc.as<JsonObjectConst>());
 
-		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(MQTT_TASK_DELAY_MS));
+		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(MQTT_TASK_INTERVAL_MS));
 	}
 }
 
@@ -127,5 +127,5 @@ void loop() {
 
 	filter.getLinearAcceleration(&linearAccelX, &linearAccelY, &linearAccelZ); 
 
-	vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(LOOP_TASK_DELAY_MS));
+	vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(LOOP_TASK_INTERVAL_MS));
 }
