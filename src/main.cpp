@@ -58,11 +58,6 @@ void mqttTask(void * pvArguments) {
 		euler["y"] = eulerY;
 		euler["z"] = eulerZ;
 
-		JsonObject orientation = doc.createNestedObject("orientation");
-		orientation["heading"] = 360 - eulerZ;
-		orientation["pitch"] = - eulerY;
-		orientation["roll"] = eulerX;
-
 		JsonObject linearAccel = doc.createNestedObject("linearAccel");
 		linearAccel["x"] = linearAccelX;
 		linearAccel["y"] = linearAccelY;
