@@ -1,100 +1,126 @@
 #include <Arduino.h>
-#include <ArduinoJson.h>
 #include <SPI.h>
-#include <Adafruit_Sensor.h>
-#include <Adafruit_BNO055.h>
 #include <SailtrackModule.h>
+#include <Adafruit_FXOS8700.h>
+#include <Adafruit_FXAS21002C.h>
+#include <Adafruit_AHRS.h>
+#include <Adafruit_Sensor_Calibration.h>
 
-#define BATTERY_ADC_PIN 35
-#define BATTERY_ADC_MULTIPLIER 1.7
-#define CONNECTION_LED_PIN 5
+// -------------------------- Configuration -------------------------- //
 
-#define I2C_SDA 27
-#define I2C_SCL 25
+#define MQTT_PUBLISH_FREQ_HZ		5
+#define AHRS_UPDATE_FREQ_HZ			100
 
-#define PUBLISH_RATE 10
-#define PUBLISH_PERIOD_MS 1000 / PUBLISH_RATE
+#define BATTERY_ADC_PIN 			35
+#define BATTERY_ADC_RESOLUTION 		4095
+#define BATTERY_ADC_REF_VOLTAGE 	1.1
+#define BATTERY_ESP32_REF_VOLTAGE	3.3
+#define BATTERY_NUM_READINGS 		32
+#define BATTERY_READING_DELAY_MS	20
 
-Adafruit_BNO055 IMU;
+#define I2C_SDA_PIN 				27
+#define I2C_SCL_PIN 				25
+
+#define LOOP_TASK_INTERVAL_MS		1000 / AHRS_UPDATE_FREQ_HZ
+#define MQTT_TASK_INTERVAL_MS	 	1000 / MQTT_PUBLISH_FREQ_HZ
+
+// ------------------------------------------------------------------- //
+
+SailtrackModule stm;
+Adafruit_FXOS8700 fxos = Adafruit_FXOS8700(0x8700A, 0x8700B);
+Adafruit_FXAS21002C fxas = Adafruit_FXAS21002C(0x0021002C);
+Adafruit_NXPSensorFusion filter;
+Adafruit_Sensor_Calibration_EEPROM cal;
+Adafruit_Sensor *accelerometer, *gyroscope, *magnetometer;
+
+float eulerX, eulerY, eulerZ;
+float linearAccelX, linearAccelY, linearAccelZ;
 
 class ModuleCallbacks: public SailtrackModuleCallbacks {
-	void onWifiConnectionBegin() {
-		// TODO: Notify user
-	}
-	
-	void onWifiConnectionResult(wl_status_t status) {
-		// TODO: Notify user
-	}
-
-	DynamicJsonDocument getStatus() {
-		DynamicJsonDocument payload(300);
-		JsonObject battery = payload.createNestedObject("battery");
-		JsonObject cpu = payload.createNestedObject("cpu");
-		battery["voltage"] = analogRead(BATTERY_ADC_PIN) * BATTERY_ADC_MULTIPLIER / 1000;
-		cpu["temperature"] = temperatureRead();
-		return payload;
+	void onStatusPublish(JsonObject status) {
+		JsonObject battery = status.createNestedObject("battery");
+		float avg = 0;
+		for (int i = 0; i < BATTERY_NUM_READINGS; i++) {
+			avg += analogRead(BATTERY_ADC_PIN) / BATTERY_NUM_READINGS;
+			delay(BATTERY_READING_DELAY_MS);
+		}
+		battery["voltage"] = 2 * avg / BATTERY_ADC_RESOLUTION * BATTERY_ESP32_REF_VOLTAGE * BATTERY_ADC_REF_VOLTAGE;
 	}
 };
 
+void mqttTask(void * pvArguments) {
+	TickType_t lastWakeTime = xTaskGetTickCount();
+	while (true) {
+		StaticJsonDocument<STM_JSON_DOCUMENT_MEDIUM_SIZE> doc;
+
+		JsonObject euler = doc.createNestedObject("euler");
+		euler["x"] = eulerX;
+		euler["y"] = eulerY;
+		euler["z"] = eulerZ;
+
+		JsonObject linearAccel = doc.createNestedObject("linearAccel");
+		linearAccel["x"] = linearAccelX;
+		linearAccel["y"] = linearAccelY;
+		linearAccel["z"] = linearAccelZ;
+
+		stm.publish("sensor/imu0", doc.as<JsonObjectConst>());
+
+		vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(MQTT_TASK_INTERVAL_MS));
+	}
+}
+
 void beginIMU() {
-	Wire.begin(I2C_SDA, I2C_SCL);
-	IMU = Adafruit_BNO055(55, 0x29, &Wire);
-	IMU.begin();
+	Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
+	fxos.begin();
+	fxas.begin();
+	accelerometer = fxos.getAccelerometerSensor();
+	gyroscope = &fxas;
+  	magnetometer = fxos.getMagnetometerSensor();
+	Wire.setClock(400000);
+}
+
+void beginAHRS() {
+	cal.begin();
+	cal.loadCalibration();
+	filter.begin();
 }
 
 void setup() {
-	STModule.begin("imu", "sailtrack-imu", IPAddress(192,168,42,102));
-	STModule.setCallbacks(new ModuleCallbacks());
+	stm.begin("imu", IPAddress(192, 168, 42, 102), new ModuleCallbacks());
 	beginIMU();
+	beginAHRS();
+	xTaskCreate(mqttTask, "mqttTask", STM_TASK_MEDIUM_STACK_SIZE, NULL, STM_TASK_MEDIUM_PRIORITY, NULL);
 }
 
 void loop() {
-	sensors_event_t eulerData, gyroData, linearAccelData, magnetometerData, accelerometerData, gravityData;
-	IMU.getEvent(&eulerData, Adafruit_BNO055::VECTOR_EULER);
-	IMU.getEvent(&gyroData, Adafruit_BNO055::VECTOR_GYROSCOPE);
-	IMU.getEvent(&linearAccelData, Adafruit_BNO055::VECTOR_LINEARACCEL);
-	IMU.getEvent(&magnetometerData, Adafruit_BNO055::VECTOR_MAGNETOMETER);
-	IMU.getEvent(&accelerometerData, Adafruit_BNO055::VECTOR_ACCELEROMETER);
-	IMU.getEvent(&gravityData, Adafruit_BNO055::VECTOR_GRAVITY);
+	TickType_t lastWakeTime = xTaskGetTickCount();
+	sensors_event_t accelEvent, gyroEvent, magEvent;
 
-	DynamicJsonDocument payload(500);
+	accelerometer->getEvent(&accelEvent);
+	gyroscope->getEvent(&gyroEvent);
+	magnetometer->getEvent(&magEvent);
 
-	JsonObject euler = payload.createNestedObject("euler");
-	euler["x"] = eulerData.orientation.x;
-	euler["y"] = eulerData.orientation.y;
-	euler["z"] = eulerData.orientation.z;
+	cal.calibrate(accelEvent);
+	cal.calibrate(gyroEvent);
+	cal.calibrate(magEvent);
 
-	JsonObject gyro = payload.createNestedObject("gyro");
-	gyro["x"] = gyroData.gyro.x;
-	gyro["y"] = gyroData.gyro.y;
-	gyro["z"] = gyroData.gyro.z;
+	float gx, gy, gz;
+	gx = gyroEvent.gyro.x * SENSORS_RADS_TO_DPS;
+	gy = gyroEvent.gyro.y * SENSORS_RADS_TO_DPS;
+	gz = gyroEvent.gyro.z * SENSORS_RADS_TO_DPS;
 
-	JsonObject linearAccel = payload.createNestedObject("linear_accel");
-	linearAccel["x"] = linearAccelData.acceleration.x;
-	linearAccel["y"] = linearAccelData.acceleration.y;
-	linearAccel["z"] = linearAccelData.acceleration.z;
+	float ax, ay, az;
+	ax = accelEvent.acceleration.x / SENSORS_GRAVITY_STANDARD;
+	ay = accelEvent.acceleration.y / SENSORS_GRAVITY_STANDARD;
+	az = accelEvent.acceleration.z / SENSORS_GRAVITY_STANDARD;
 
-	JsonObject magnetometer = payload.createNestedObject("magnetometer");
-	magnetometer["x"] = magnetometerData.magnetic.x;
-	magnetometer["y"] = magnetometerData.magnetic.y;
-	magnetometer["z"] = magnetometerData.magnetic.z;
+	filter.update(gx, gy, gz, ax, ay, az, magEvent.magnetic.x, magEvent.magnetic.y, magEvent.magnetic.z);
 
-	JsonObject accelerometer = payload.createNestedObject("accelerometer");
-	accelerometer["x"] = accelerometerData.acceleration.x;
-	accelerometer["y"] = accelerometerData.acceleration.y;
-	accelerometer["z"] = accelerometerData.acceleration.z;
+	eulerX = filter.getRoll();
+	eulerY = filter.getPitch();
+	eulerZ = filter.getYaw();
 
-	uint8_t calSystem, calGyro, calAccel, calMag = 0;
-	IMU.getCalibration(&calSystem, &calGyro, &calAccel, &calMag);
-	JsonObject calibration = payload.createNestedObject("calibration");
-	calibration["system"] = calSystem;
-	calibration["gyro"] = calGyro;
-	calibration["accel"] = calAccel;
-	calibration["mag"] = calMag;
+	filter.getLinearAcceleration(&linearAccelX, &linearAccelY, &linearAccelZ); 
 
-	payload["temperature"] = IMU.getTemp();
-
-	STModule.publish("sensor/imu0", "imu0", payload);
-
-	delay(PUBLISH_PERIOD_MS);
+	vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(LOOP_TASK_INTERVAL_MS));
 }
