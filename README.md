@@ -4,34 +4,21 @@ For a better understanding of the whole system, please check [SailTrack Docs](ht
 
 ## Installation
  1. Download and install [PlatformIO Core](https://docs.platformio.org/en/latest/core/index.html). 
- 2. Download [MotionCal](https://www.pjrc.com/store/prop_shield.html). 
+ 2. Download and install [MotionCal](https://www.pjrc.com/store/prop_shield.html). 
  3. Clone the [SailTrack IMU](https://github.com/metis-vela-unipd/sailtrack-imu) repository.
- 4. Flash the calibration firmware:
-  ```bash
-  pio run -e motioncall.cpp 
-  ```
- 5. motioncall configuration
- 6. Flash the firmware
 
 ## Usage
-
-explain led blinking
-
-
-pio run on platformio core
-flash motioncall.cpp
-calibrate following the instructions
-close motioncall 
-flash main.cpp
-led blinking
-
-```bash
-pio run -e motioncall.cpp 
-
-pio run
-
-
-```
+ 1. Flash MotionCal calibration firmware:
+ ```bash
+  pio run -e motioncall.cpp 
+ ```
+ 2. Open MotionCal and select the port on the top-left menu.
+ 3. Move the sensor doing circular movement until the "Send Cal" button enables.
+ 4. Press that button and close MotionCal.
+ 5. Flash main.cpp
+ ```bash
+  pio run -e main.cpp 
+ ```
 
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
