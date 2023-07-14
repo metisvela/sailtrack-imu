@@ -1,7 +1,6 @@
 #include <Arduino.h>
 #include <SPI.h>
-#include <Adafruit_FXOS8700.h>
-#include <Adafruit_FXAS21002C.h>
+#include <Adafruit_LSM9DS1.h>
 #include <Adafruit_Sensor_Calibration.h>
 
 // -------------------------- Configuration -------------------------- //
@@ -12,8 +11,7 @@
 // ------------------------------------------------------------------- //
 
 
-Adafruit_FXOS8700 fxos = Adafruit_FXOS8700(0x8700A, 0x8700B);
-Adafruit_FXAS21002C fxas = Adafruit_FXAS21002C(0x0021002C);
+Adafruit_LSM9DS1 lsm = Adafruit_LSM9DS1();
 Adafruit_Sensor_Calibration_EEPROM cal;
 Adafruit_Sensor *accelerometer, *gyroscope, *magnetometer;
 int loopcount = 0;
@@ -102,20 +100,16 @@ void setup(void) {
     Wire.setPins(I2C_SDA_PIN, I2C_SCL_PIN);
     cal.begin();
     cal.loadCalibration();
-    fxos.begin();
-	fxas.begin();
-	accelerometer = fxos.getAccelerometerSensor();
-	gyroscope = &fxas;
-  	magnetometer = fxos.getMagnetometerSensor();
+    lsm.setupAccel(lsm.LSM9DS1_ACCELRANGE_2G);
+  	lsm.setupMag(lsm.LSM9DS1_MAGGAIN_16GAUSS);
+  	lsm.setupGyro(lsm.LSM9DS1_GYROSCALE_500DPS);
 	Wire.setClock(400000);
 }
 
 void loop() {
-    sensors_event_t accelEvent, gyroEvent, magEvent;
-
-    accelerometer->getEvent(&accelEvent);
-	gyroscope->getEvent(&gyroEvent);
-	magnetometer->getEvent(&magEvent);
+    sensors_event_t accelEvent, gyroEvent, magEvent, tempEvent;
+    lsm.read();
+    lsm.getEvent(&accelEvent, &magEvent, &gyroEvent, &tempEvent);
     
     Serial.print("Raw:");
     Serial.print(int(accelEvent.acceleration.x * 8192 / SENSORS_GRAVITY_STANDARD)); Serial.print(",");
