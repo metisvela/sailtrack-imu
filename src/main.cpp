@@ -82,7 +82,7 @@ void beginIMU() {
 void beginAHRS() {
 	cal.begin();
 	cal.loadCalibration();
-	filter.begin();
+	filter.begin(AHRS_UPDATE_FREQ_HZ);
 }
 
 void setup() {
