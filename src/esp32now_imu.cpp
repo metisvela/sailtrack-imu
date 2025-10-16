@@ -21,7 +21,7 @@ Adafruit_Sensor_Calibration_EEPROM cal;
 
 
 //Mac address of the messages sent
-uint8_t broadcastAddress[] = {0xA0, 0xA3, 0xB3, 0x1A, 0x4D, 0x60};
+uint8_t broadcastAddress[] = {0xA0, 0xA3, 0xB3, 0x1A, 0x4D, 0x60}; //Change this line with the address of the second esp32 board.
 
 //Used for the type of message being sent
 int loopcount = 0;

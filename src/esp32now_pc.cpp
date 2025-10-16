@@ -3,7 +3,7 @@
 #include <WiFi.h>
 
 // Mac address of the messages sent
-uint8_t broadcastAddress[] = {0xA0, 0xA3, 0xB3, 0x1A, 0x68, 0x14};
+uint8_t broadcastAddress[] = {0xA0, 0xA3, 0xB3, 0x1A, 0x68, 0x14}; //Change this line with the address of the imu
 
 
 

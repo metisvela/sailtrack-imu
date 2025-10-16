@@ -20,6 +20,15 @@ For a better understanding of the whole system, please check [SailTrack Docs](ht
   pio run -e main.cpp 
  ```
 
+ ### Wireless Calibration
+ 1. Upload the espMacAdress.cpp to the board with the IMU and also to another Esp32 board. (Second board will stay pluged in the computer)
+ 2. Change line 24 on the esp32now_imu.cpp file with the address of the other board.
+ 3. Change line 6 on the esp32now_pc.cpp file with the address of the board with the IMU.
+ 4. Upload the files respectively.
+ 5. Open MotionCal and select the port on the top-left menu.
+ 6. Move the sensor doing circular movement until the "Send Cal" button enables.
+ 7. Press that button and close MotionCal.
+
 ## Contributing
 Pull requests are welcome. For major changes, please open an issue first to discuss what you would like to change.
 
